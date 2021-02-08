@@ -5,7 +5,7 @@ Giant sequoias (Sequoiadendron giganteum [Lindl.] Buchholz) are towering endemic
 
 ## Table of Contents
 * [Installation](#Installation)
-* [About the Data(#About)
+* [About the Data](#About)
 * [Project Motivation](#motivation)
 * [File Description](#description)
 * [Results and Insights](#Results)
