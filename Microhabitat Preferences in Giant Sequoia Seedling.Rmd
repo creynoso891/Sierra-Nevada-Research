@@ -1,0 +1,287 @@
+---
+title: "Microhabitat Preferences in Giant Sequoia Seedling"
+author: "Citlally Reynoso"
+date: "12/2/2020"
+output: pdf_document
+---
+
+# About Giant Sequoias 
+Giant sequoias (Sequoiadendron giganteum [Lindl.] Buchholz) are towering endemic trees that reside in small plots throughout the Sierra Nevada Mountains. They can live for more than 3200 years (Stephenson and Demetry, 1995), and are resilient to drought and excessive foliage.  
+
+# Motivation 
+In recent years we have seen a decline in the recruitment of Giant sequoias, with some sequoia plots not showing signs of any new life. In this research project we study the relationship between weather conditions, soil moisture, and isotope components in the soil to determine what microhabitat variables can best predict the presence of sequoia seedlings.  
+
+# Data 
+The data set used for the analysis is an aggregation of several data sets organized by subplot. 111 HOBO units were placed on plots of land throughout Yosemite National Park. These HOBO units measured the lux and temperature of the subplot every 30 minutes from 2016-08-26 to 2017-10-25. I created summary statistics for each of the plots and then joined this information with seedling count and soil moisture at various depths. 
+
+```{r, echo= FALSE, message=FALSE}
+library(dplyr)
+library(tidyr)
+library(stringr)
+library(readxl)
+library(ggplot2)
+library(graphics)
+library(kableExtra)
+library(knitr)
+```
+
+
+# Data Cleaning 
+1. Read in Data  
+- read in HOBO measurements, seedling count, and soil moisture data set 
+```{r}
+#Set working Directory 
+setwd("~/Sequoia Lab")
+#Read in HOBO and Seedling data 
+seedling_join <- read.csv(file = "./2016_Data/Hobo data/measurement_period_stats.csv")
+```
+
+- read in coverage data set
+```{r}
+#read in Cvr data 
+cvr <- read_excel("~/Sequoia Lab/2016_Data/SeedlingPlots_RawDataCombined-160921.xlsx", 
+                                   sheet = "Sequoia Seedling Study 2016")
+```
+2. Join seedling and coverage data sets with a left join using subplot as the primary key variable
+```{r}
+#join plot columns to have a single column with all the info 
+cvr <- cvr %>% unite(PlotName, PlotID,subplot, sep = '')
+cvr$PlotName <- str_remove_all(cvr$PlotName, pattern = "NA")
+
+#only need the cover variable so I delete the rest to simplify join
+cvr <- cvr[, c(4,9:11, 13:20,22:24,26:31)]
+# "PlotName"   "SaplingCnt"          "SeqCones"            "PctCvrSeqDuff"   "MossCvr"   
+# "HerbCvr"             "ShrubCvr"            "STreeCvr"           
+# "WdCvr"               "DuffCvr"             "BGCvr"               "DuffDepth (mm)"     
+# "Severity-Substrate"  "Severity-Vegetation" "Rock Cover"         
+# "Short prime"         "Medium Prime"        "Long Prime"         
+# "Short Double Prime"  "Med Double Prime"    "Long Double Prime"  
+
+
+
+
+#seedling_join is organized by subplot and rep, while cvr is only listed by subplot 
+#consequently, I will have to pair the data by subplot, and some of the cvr data will be repeated 
+# this makes the most sense because this way the data will best match the hobo data
+
+#remove Rep info 
+seedling_join$PlotName <- str_remove_all(seedling_join$PlotName, pattern = "a")
+seedling_join$PlotName <- str_remove_all(seedling_join$PlotName, pattern = "b")
+
+Master_Sequoia <- 
+  left_join(x = seedling_join, 
+            y = cvr, by = "PlotName" )
+names(Master_Sequoia)[1] <- "unit_names"
+```
+3. Change names of columns that are difficult to extract 
+```{r}
+#change name of columns difficult to extract
+names(Master_Sequoia)[17] <- "DuffDepthAvg"
+names(Master_Sequoia)[28] <- "DuffDepth"
+names(Master_Sequoia)[29] <- "Severity_Substrate"
+names(Master_Sequoia)[30] <- "Severity_Vegetation"
+names(Master_Sequoia)[31] <- "RockCover"
+```
+4. Properly format columns that have not been properly formatted
+```{r}
+#change columns from character to numeric type
+Master_Sequoia[,20:31] <- sapply(Master_Sequoia[,20:31], as.numeric)
+
+#Change SeqCones to binary 
+Master_Sequoia$SeqCones <- ifelse(Master_Sequoia$SeqCones == "no", FALSE, TRUE)
+
+#change vector type for columns not formatted appropriately 
+Master_Sequoia$short <- as.numeric(as.character(Master_Sequoia$short))
+Master_Sequoia$med <- as.numeric(as.character(Master_Sequoia$med))
+Master_Sequoia$long <- as.numeric(as.character(Master_Sequoia$long))
+```
+5. Change TR value with NAs in columns: short, medium, long
+```{r}
+#Replace TR values with NAs in the: Short, medium, long columns 
+Master_Sequoia$short[which(str_detect(Master_Sequoia$short, pattern = "TR"))] <- NA
+Master_Sequoia$med[which(str_detect(Master_Sequoia$med, pattern = "TR"))] <- NA
+Master_Sequoia$long[which(str_detect(Master_Sequoia$long, pattern = "TR"))] <- NA
+```
+
+```{r}
+head(Master_Sequoia)
+```
+6. Remove rows that don't have a responce for seedling count
+```{r}
+Master_Sequoia <-  Master_Sequoia %>% filter(is.na(seedlings)!=TRUE)
+```
+
+
+# Exploratory Data Analysis & Data Visualization
+
+
+```{r, fig.align="center", warning = FALSE}
+seed_hist <- qplot(Master_Sequoia$seedlings, geom = "histogram",
+                   main = "Sequoia Seedling Count Distribution",
+                   xlab = "Total Seedlings in Subplot",
+                   ylab = "Frequency",
+                   fill = I("dark green"),
+                   binwidth = 1,
+                   alpha = I(0.5))
+seed_hist
+```
+
+- As displayed by the histogram above, the plots of land sampled have a very wide range of seedling counts. About half of the plots do not have any seedlings, many have a few, and there are some that are very heavily populated. The mean of the data is considerably lower than the variation in the data. This overdispertion would be too large to fit a Poisson model. Even a Negative Binomial model, which can account for overdispersion, would have a large amount of variation in the prediction that would lead to a large standard error.
+- The question at hand is what microhabitat variables lead to the successful growth of sequoia seedlings. Therefore, I will create a 2-factor/binary variable that captures whether a plot has seedlings or not. I will then use a logistic model to calculate the likelihood a plot has of growing sequoia seedlings based on the microhabitat variables. 
+
+# Sequoia Seedling Presence Variable 
+
+**Number of Plots with and without Sequoia Seedlings**
+```{r, echo=FALSE}
+#To deal with this I will seperate the data into zero and non-zero observations
+Master_Sequoia$binary_seedlings <- factor(ifelse(Master_Sequoia$seedlings == 0, 
+                                          0,1))
+
+
+table(Master_Sequoia$binary_seedlings)
+```
+
+Binary Variable vs microhabitat variables 
+```{r, warning=FALSE}
+#Below I will plot non-zero data 
+p <-  
+  ggplot(data = Master_Sequoia,
+         aes(x = factor(binary_seedlings))) + geom_boxplot(size = 1)+
+  geom_jitter(alpha = 1, aes(color = factor(binary_seedlings))) +
+  xlab("Sequoia Seedling Presence") + 
+  theme(legend.position='none') + scale_color_brewer(palette="Greens")
+#Temp  
+p + aes(y = TempC_mean)
+p + aes(y = TempC_median) 
+p + aes(y = TempC_min)
+p + aes(y = TempC_max)
+p + aes(y = TempC_sd)
+#ILux
+p + aes(y = ILux_mean)
+p + aes(y = ILux_median)
+p + aes(y = ILux_max)
+p + aes(y = ILux_sd)
+p + aes(y = ILux_sum)
+```
+
+# Logistic Regression 
+```{r}
+#data frame with no NAs so I can use the step function
+#removing columns with too many NAs or that simply aren't meant to be used in analysis
+model_df <- subset(Master_Sequoia, select = -c(unit_names,PlotName,med,long,SaplingCnt,
+SeqCones, `Short prime`,`Medium Prime`, `Long Prime`, `Short Double Prime`,`Med Double Prime`, `Long Double Prime`, seedlings, Severity_Vegetation,Severity_Substrate))
+model_df <- na.omit(model_df)
+
+m1_log <- glm(binary_seedlings ~ .,
+    data = model_df, family = binomial)
+summary(m1_log)
+```
+
+```{r}
+log_step1 <- step(m1_log, direction = "both")
+log_step1$formula
+```
+
+
+```{r}
+model_df <- subset(Master_Sequoia, select = c(
+  binary_seedlings, TempC_mean , TempC_median , ILux_median , 
+    TempC_min , ILux_max , TempC_sd , ILux_sum , DuffDepthAvg , 
+    PctCvrSeqDuff , MossCvr , ShrubCvr , WdCvr , DuffCvr
+))
+model_df <- na.omit(model_df)
+m2_log <- glm(binary_seedlings ~ .,
+    data = model_df, family = binomial)
+summary(m2_log)
+```
+
+
+
+cross validate the logistic model based on the step function 
+```{r}
+logistic_model_accuracy <- 
+  data.frame(seed = numeric(length = 30),
+            accuracy = numeric(length = 30) )
+
+for(i in 1:30){
+  logistic_model_accuracy$seed[i] <- 
+  round(runif(1,1000,10000)) #sets the seed to enable replication 
+  set.seed(logistic_model_accuracy$seed[i])
+  
+  #select 70% of rows to be used for training the model
+  index <- sample(1:nrow(model_df), 
+  round(length(model_df)*0.7))
+  #create train data frame by extracting rows selected in index
+  train <- model_df[index,]
+  #create data frame to test model accuracy with the remaining rows
+  test <- model_df[!(1:length(model_df) %in% index),]
+  
+  #create Logistic model with train data
+  log.cv <- glm(binary_seedlings ~ .,
+                data = train, family = binomial)
+  #Use test data to create prediction 
+  log_pred <- predict(log.cv, 
+                      subset(test, select = -c(binary_seedlings)),
+                      type = "response")
+  log_pred <- ifelse(log_pred>0.5, 1, 0)
+  
+  #test prediction accuracy 
+  logistic_model_accuracy$accuracy[i] <- 
+  sum(log_pred == test$binary_seedlings)/nrow(test)
+
+  }
+mean(logistic_model_accuracy$accuracy)
+```
+
+further reduce any variable that aren't significant and may be causing problems due to correlation
+```{r}
+model_df <- subset(Master_Sequoia, select = c(
+  binary_seedlings, TempC_sd , 
+  PctCvrSeqDuff , MossCvr , ShrubCvr , WdCvr
+))
+model_df <- na.omit(model_df)
+m3_log <- glm(binary_seedlings ~ .,
+    data = model_df, family = binomial)
+summary(m3_log)
+```
+
+cross validate reduced model
+```{r}
+logistic_model_accuracy <- 
+  data.frame(seed = numeric(length = 30),
+            accuracy = numeric(length = 30) )
+
+for(i in 1:30){
+  logistic_model_accuracy$seed[i] <- 
+  round(runif(1,1000,10000)) #sets the seed to enable replication 
+  set.seed(logistic_model_accuracy$seed[i])
+  
+  #select 70% of rows to be used for training the model
+  index <- sample(1:nrow(model_df), 
+  round(length(model_df)*0.7))
+  #create train data frame by extracting rows selected in index
+  train <- model_df[index,]
+  #create data frame to test model accuracy with the remaining rows
+  test <- model_df[!(1:length(model_df) %in% index),]
+  
+  #create Logistic model with train data
+  log.cv <- glm(binary_seedlings ~ .,
+                data = train, family = binomial)
+  #Use test data to create prediction 
+  log_pred <- predict(log.cv, 
+                      subset(test, select = -c(binary_seedlings)),
+                      type = "response")
+  log_pred <- ifelse(log_pred>0.5, 1, 0)
+  
+  #test prediction accuracy 
+  logistic_model_accuracy$accuracy[i] <- 
+  sum(log_pred == test$binary_seedlings)/nrow(test)
+
+  }
+mean(logistic_model_accuracy$accuracy)
+```
+
+
+# Cross Validation 
+# Insights and Conclusions 
+# Limitations and Further Questions 
