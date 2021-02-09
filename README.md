@@ -26,8 +26,9 @@ In recent years we have seen a decline in the recruitment of Giant sequoias, wit
 
 ## File Description <a name="description"></a>
 This project includes:
-1. 
-2. [Microhabitat Preferences in Giant Sequoia Seedling RMD](https://github.com/creynoso891/Sierra-Nevada-Research/blob/main/Microhabitat%20Preferences%20in%20Giant%20Sequoia%20Seedling.Rmd): R Markdown with the code to analyze, model, and vizualize CO2 monthly means data.
+1. R file 
+2. [Microhabitat Preferences in Giant Sequoia Seedling.Rmd](https://github.com/creynoso891/Sierra-Nevada-Research/blob/main/Microhabitat%20Preferences%20in%20Giant%20Sequoia%20Seedling.Rmd)
+- R Markdown with the code to analyze, model, and vizualize CO2 monthly means data.
 3. **'Microhabitat Preferences in Giant Sequoia Seedling.pdf'** PDF produced using the R Markdown above (for complete code please refer to the R Markdowm above) 
 
 
